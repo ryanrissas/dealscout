@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root { color-scheme: light; }
+  body { @apply bg-paper text-ink font-sans antialiased; }
+  ::selection { @apply bg-blue text-white; }
+  h1, h2, h3 { @apply font-serif; }
+  a { @apply underline-offset-2; }
+  *:focus-visible { @apply outline-none ring-2 ring-blue ring-offset-2 ring-offset-paper; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+}
+
+@layer components {
+  .eyebrow { @apply text-[11px] font-medium uppercase tracking-[0.14em] text-ink-faint; }
+  .card { @apply bg-surface border border-hairline rounded-sm shadow-card; }
+  .btn { @apply inline-flex items-center gap-1.5 rounded-sm border px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 disabled:pointer-events-none; }
+  .btn-primary { @apply btn bg-blue border-blue text-white hover:bg-blue-deep; }
+  .btn-ghost { @apply btn bg-transparent border-hairline text-ink hover:bg-white; }
+  .btn-danger { @apply btn bg-deal-red border-deal-red text-white hover:opacity-90; }
+  .input { @apply w-full rounded-sm border border-hairline bg-white px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-faint; }
+  .label { @apply block text-xs font-medium text-ink-soft mb-1; }
+  .mono { @apply font-mono tabular-nums; }
+  .th { @apply eyebrow text-left px-3 py-2 border-b border-hairline whitespace-nowrap; }
+  .td { @apply px-3 py-2.5 text-sm border-b border-hairline align-middle; }
+}

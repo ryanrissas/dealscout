@@ -1,0 +1,485 @@
+// DealScout — acquisition platform schema
+// PostgreSQL via Prisma. See README.md for setup.
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["queryCompiler", "driverAdapters"]
+  engineType      = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum PropertyType {
+  SINGLE_FAMILY
+  DUPLEX
+  TRIPLEX
+  FOURPLEX
+  MULTI_5_20
+  MULTI_20_PLUS
+}
+
+enum ListingStatus {
+  ACTIVE
+  PENDING
+  SOLD
+  OFF_MARKET
+}
+
+enum OccupancyStatus {
+  OCCUPIED
+  PARTIALLY_OCCUPIED
+  VACANT
+  UNKNOWN
+}
+
+// Rent provenance — never silently substituted for one another.
+enum RentKind {
+  ACTUAL           // in-place rent reported by the listing/seller records
+  PRO_FORMA        // seller-provided projection
+  MARKET_ESTIMATE  // model/comp-based estimate
+  HUD_BENCHMARK    // HUD FMR/SAFMR-derived benchmark
+}
+
+enum DealColor {
+  DARK_GREEN
+  GREEN
+  YELLOW
+  RED
+}
+
+enum Confidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum PipelineStage {
+  NEW
+  REVIEWING
+  CONTACT_AGENT
+  UNDERWRITING
+  OFFER_PLANNED
+  OFFER_SUBMITTED
+  UNDER_CONTRACT
+  PASSED
+  CLOSED
+}
+
+enum AlertType {
+  NEW_GREEN_DEAL
+  RATIO_TARGET_CROSSED
+  PRICE_REDUCTION
+  DEAL_BECAME_VIABLE
+  STATUS_CHANGE
+  STALE_LISTING_LEVERAGE
+}
+
+enum TaskStatus {
+  OPEN
+  DONE
+}
+
+enum AssumptionScope {
+  GLOBAL
+  MARKET
+  PROPERTY
+}
+
+// ─── Team & users ─────────────────────────────────────────────────────────────
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String
+  users     User[]
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  passwordHash  String
+  role          Role      @default(MEMBER)
+  teamId        String?
+  team          Team?     @relation(fields: [teamId], references: [id])
+  notes         Note[]
+  assignedTasks Task[]    @relation("TaskAssignee")
+  pipelineItems PipelineItem[] @relation("PipelineAssignee")
+  savedSearches SavedSearch[]
+  alerts        Alert[]
+  scenarios     UnderwritingScenario[]
+  createdAt     DateTime  @default(now())
+}
+
+// ─── Markets & assumptions ────────────────────────────────────────────────────
+
+model Market {
+  id         String     @id @default(cuid())
+  name       String
+  city       String?
+  county     String?
+  state      String
+  notes      String?
+  properties Property[]
+  assumptionProfiles AssumptionProfile[]
+  createdAt  DateTime   @default(now())
+}
+
+/// Expense/financing assumption sets. GLOBAL default, per-MARKET override,
+/// or per-PROPERTY override. Resolution order: PROPERTY > MARKET > GLOBAL.
+model AssumptionProfile {
+  id         String          @id @default(cuid())
+  name       String
+  scope      AssumptionScope
+  marketId   String?
+  market     Market?         @relation(fields: [marketId], references: [id])
+  propertyId String?
+  property   Property?       @relation(fields: [propertyId], references: [id])
+  data       Json            // FinancingAssumptions & OpexAssumptions (see src/lib/finance)
+  isDefault  Boolean         @default(false)
+  updatedAt  DateTime        @updatedAt
+  createdAt  DateTime        @default(now())
+}
+
+/// Singleton row (id = "global") for scoring thresholds, alert rules and
+/// Section 8 settings. Editable in Settings by ADMIN users.
+model AppSetting {
+  id        String   @id
+  data      Json
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Properties & listings ────────────────────────────────────────────────────
+
+model Property {
+  id                   String          @id @default(cuid())
+  addressKey           String          @unique // normalized "street|zip" dedupe key
+  street               String
+  city                 String
+  state                String
+  zip                  String
+  county               String?
+  latitude             Float?
+  longitude            Float?
+  propertyType         PropertyType
+  unitCount            Int
+  yearBuilt            Int?
+  buildingSqft         Int?
+  lotSqft              Int?
+  description          String?
+  photos               String[]        @default([])
+  occupancy            OccupancyStatus @default(UNKNOWN)
+  taxesAnnual          Float?
+  taxAssessedValue     Float?
+  ownerPaidUtilities   String?         // e.g. "Water, sewer, common electric"
+  ownerUtilitiesMonthly Float?
+  parking              String?
+  heating              String?
+  cooling              String?
+  roof                 String?
+  foundation           String?
+  floodZone            String?         // e.g. "Zone X (minimal)" / "Zone AE"
+  codeViolations       String?         // known violations, if legally available
+  conditionNotes       String?
+  estimatedRehab       Float?
+  marketId             String?
+  market               Market?         @relation(fields: [marketId], references: [id])
+
+  units                Unit[]
+  listings             Listing[]
+  rentRecords          RentRecord[]
+  metrics              DealMetrics?
+  pipeline             PipelineItem?
+  notes                Note[]
+  tasks                Task[]
+  attachments          Attachment[]
+  statusHistory        PropertyStatusHistory[]
+  alerts               Alert[]
+  scenarios            UnderwritingScenario[]
+  assumptionProfiles   AssumptionProfile[]
+
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  @@index([city, state])
+  @@index([zip])
+  @@index([propertyType])
+}
+
+model Unit {
+  id          String   @id @default(cuid())
+  propertyId  String
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  label       String
+  bedrooms    Int
+  bathrooms   Float
+  sqft        Int?
+  currentRent Float?   // actual in-place rent for this unit, if known
+  occupied    Boolean?
+}
+
+model ListingSource {
+  id       String    @id @default(cuid())
+  key      String    @unique // e.g. MOCK_MLS, RESO_WEB_API
+  name     String
+  kind     String    // "mock" | "mls_reso" | "third_party_api"
+  priority Int       @default(100) // lower = more authoritative in dedupe merges
+  website  String?
+  listings Listing[]
+}
+
+model Agent {
+  id              String    @id @default(cuid())
+  fullName        String
+  brokerage       String
+  phone           String?
+  email           String?
+  officePhone     String?
+  mlsAgentId      String?
+  sourceKey       String    // where contact data came from
+  sourceUpdatedAt DateTime? // freshness of the contact data
+  listings        Listing[]
+
+  @@unique([fullName, brokerage])
+}
+
+model Listing {
+  id              String        @id @default(cuid())
+  propertyId      String
+  property        Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  sourceId        String
+  source          ListingSource @relation(fields: [sourceId], references: [id])
+  agentId         String?
+  agent           Agent?        @relation(fields: [agentId], references: [id])
+  mlsNumber       String?
+  url             String?
+  status          ListingStatus @default(ACTIVE)
+  price           Float
+  originalPrice   Float?
+  listDate        DateTime?
+  statusChangedAt DateTime?
+  lastSeenAt      DateTime      @default(now())
+  sourceUpdatedAt DateTime?     // provider's own "last modified" timestamp
+  isPrimary       Boolean       @default(true) // freshest/most authoritative among duplicates
+  raw             Json?
+  priceEvents     ListingPriceEvent[]
+
+  @@unique([sourceId, mlsNumber])
+  @@index([propertyId])
+}
+
+model ListingPriceEvent {
+  id         String   @id @default(cuid())
+  listingId  String
+  listing    Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  price      Float
+  occurredAt DateTime @default(now())
+}
+
+model RentRecord {
+  id            String   @id @default(cuid())
+  propertyId    String
+  property      Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  unitId        String?
+  kind          RentKind
+  monthlyAmount Float
+  source        String?
+  note          String?
+  effectiveDate DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([propertyId, kind])
+}
+
+// ─── Computed deal metrics (default-assumption snapshot) ─────────────────────
+
+model DealMetrics {
+  id               String     @id @default(cuid())
+  propertyId       String     @unique
+  property         Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  rentBasisUsed    RentKind?
+  monthlyGrossRent Float?
+  rentToPricePct   Float?
+  grossYieldPct    Float?
+  pricePerUnit     Float?
+  pricePerSqft     Float?
+  noiAnnual        Float?
+  capRatePct       Float?
+  dscr             Float?
+  cashFlowMonthly  Float?
+  cashFlowAnnual   Float?
+  cashToClose      Float?
+  cocPct           Float?
+  breakEvenOccPct  Float?
+  score            Int
+  color            DealColor
+  confidence       Confidence
+  missingFields    String[]   @default([])
+  breakdown        Json       // transparent score ledger + classification reasons
+  sec8Color        DealColor?
+  sec8             Json?      // Section 8 opportunity detail
+  hudMonthlyGross  Float?
+  computedAt       DateTime   @default(now())
+
+  @@index([color])
+  @@index([score])
+}
+
+// ─── Underwriting scenarios ───────────────────────────────────────────────────
+
+model UnderwritingScenario {
+  id          String   @id @default(cuid())
+  propertyId  String
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  name        String
+  rentBasis   RentKind
+  assumptions Json
+  results     Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ─── Saved searches & alerts ──────────────────────────────────────────────────
+
+model SavedSearch {
+  id           String   @id @default(cuid())
+  name         String
+  filters      Json
+  alertEnabled Boolean  @default(true)
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id])
+  createdAt    DateTime @default(now())
+}
+
+model Alert {
+  id         String    @id @default(cuid())
+  type       AlertType
+  title      String
+  reasons    String[]  @default([])
+  propertyId String?
+  property   Property? @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  read       Boolean   @default(false)
+  emailed    Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, read])
+}
+
+// ─── Collaboration ────────────────────────────────────────────────────────────
+
+model Note {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  body       String
+  createdAt  DateTime @default(now())
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  propertyId  String
+  property    Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  title       String
+  status      TaskStatus @default(OPEN)
+  dueAt       DateTime?
+  assigneeId  String?
+  assignee    User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  createdAt   DateTime   @default(now())
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  propertyId   String
+  property     Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  fileName     String
+  filePath     String
+  size         Int
+  uploadedBy   String?
+  createdAt    DateTime @default(now())
+}
+
+model PipelineItem {
+  id              String        @id @default(cuid())
+  propertyId      String        @unique
+  property        Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  stage           PipelineStage @default(NEW)
+  assigneeId      String?
+  assignee        User?         @relation("PipelineAssignee", fields: [assigneeId], references: [id])
+  tags            String[]      @default([])
+  favorite        Boolean       @default(false)
+  rejectionReason String?       // required whenever a deal is rejected/passed
+  stageChangedAt  DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model PropertyStatusHistory {
+  id         String   @id @default(cuid())
+  propertyId String
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  field      String   // e.g. "listing.price", "listing.status", "pipeline.stage"
+  oldValue   String?
+  newValue   String?
+  occurredAt DateTime @default(now())
+
+  @@index([propertyId, occurredAt])
+}
+
+// ─── HUD data ─────────────────────────────────────────────────────────────────
+
+/// HUD Fair Market Rents. zip = null → metro/county-level FMR record;
+/// zip set + isSafmr = true → ZIP-level Small Area FMR. Refreshable via the
+/// HUD FMR API adapter (src/lib/hud/hudApiAdapter.ts).
+model HudFmrRecord {
+  id            String   @id @default(cuid())
+  fiscalYear    Int
+  areaName      String   // e.g. "Toledo, OH MSA"
+  areaCode      String?  // HUD entity id, e.g. METRO45780M45780
+  state         String
+  county        String?
+  zip           String?
+  isSafmr       Boolean  @default(false)
+  efficiency    Float
+  oneBr         Float
+  twoBr         Float
+  threeBr       Float
+  fourBr        Float
+  effectiveDate DateTime
+  sourceUrl     String
+  note          String?
+
+  @@index([zip, fiscalYear])
+  @@index([state, fiscalYear])
+}
+
+/// Utility allowances by bedroom count. Seeded values are SAMPLES —
+/// replace with the schedule published by the applicable housing authority.
+model UtilityAllowance {
+  id            String    @id @default(cuid())
+  authorityName String
+  state         String
+  zip           String?
+  bedrooms      Int
+  monthlyAmount Float
+  tenantPaid    String    // which utilities the tenant pays
+  note          String?
+  effectiveDate DateTime?
+}

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520">
+  <defs>
+    <linearGradient id="sky3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7A6450"/>
+      <stop offset="1" stop-color="#5C4A3A"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="520" fill="url(#sky3)"/>
+  <rect y="380" width="800" height="140" fill="#3D3024"/>
+  <g fill="#3D3024" opacity="0.85">
+    <rect x="90" y="200" width="150" height="180"/>
+    <polygon points="90,200 165,140 240,200"/>
+    <rect x="300" y="160" width="200" height="220"/>
+    <rect x="560" y="230" width="130" height="150"/>
+    <polygon points="560,230 625,180 690,230"/>
+  </g>
+  <g fill="#7A6450" opacity="0.5">
+    <rect x="115" y="230" width="28" height="38"/><rect x="163" y="230" width="28" height="38"/>
+    <rect x="115" y="290" width="28" height="38"/><rect x="163" y="290" width="28" height="38"/>
+    <rect x="325" y="185" width="30" height="42"/><rect x="385" y="185" width="30" height="42"/><rect x="445" y="185" width="30" height="42"/>
+    <rect x="325" y="250" width="30" height="42"/><rect x="385" y="250" width="30" height="42"/><rect x="445" y="250" width="30" height="42"/>
+    <rect x="325" y="315" width="30" height="42"/><rect x="385" y="315" width="30" height="42"/><rect x="445" y="315" width="30" height="42"/>
+    <rect x="585" y="255" width="24" height="34"/><rect x="640" y="255" width="24" height="34"/>
+    <rect x="585" y="310" width="24" height="34"/><rect x="640" y="310" width="24" height="34"/>
+  </g>
+  <g font-family="ui-monospace, Menlo, monospace" text-anchor="middle">
+    <text x="400" y="470" font-size="22" fill="#FFFFFF" opacity="0.85" letter-spacing="4">SAMPLE PHOTO</text>
+    <text x="400" y="496" font-size="13" fill="#FFFFFF" opacity="0.55" letter-spacing="2">DEMONSTRATION LISTING IMAGE</text>
+  </g>
+</svg>
